@@ -6,29 +6,31 @@ if (!defined( 'ABSPATH' ) || !defined( 'GOURL' )) exit;
 
 final class gourlclass
 {
-	private $options 		= array(); 		// global setting values
-	private $hash_url		= "";			// security; save your gourl public/private keys sha1 hash in file (db and file)
+	private $options 			= array(); 		// global setting values
+	private $hash_url			= "";			// security; save your gourl public/private keys sha1 hash in file (db and file)
 	private $errors			= array(); 		// global setting errors
-	private $payments		= array(); 		// global activated payments (bitcoin, litecoin, etc)
+	private $payments			= array(); 		// global activated payments (bitcoin, litecoin, etc)
+	private $adminform          	= "gourl_adminform";
+	private $admin_form_key      	= "";  		// unique form key
 	
 	private $options2 		= array(); 		// pay-per-view settings
 	private $options3 		= array(); 		// pay-per-membership settings
 
 	private $page 			= array(); 		// current page url
 	private $id 			= 0; 			// current record id
-	private $record 		= array(); 		// current record values
-	private $record_errors 	= array(); 		// current record errors
-	private $record_info	= array(); 		// current record messages
-	private $record_fields	= array(); 		// current record fields
+	private $record 	     		= array(); 		// current record values
+	private $record_errors 		= array(); 		// current record errors
+	private $record_info		= array(); 		// current record messages
+	private $record_fields		= array(); 		// current record fields
 	
-	private $updated		= false;		// publish 'record updated' message
+	private $updated			= false;		// publish 'record updated' message
 	
 	private $lock_type		= "";			// membership or view
 
 	private $coin_names     	= array();
 	private $coin_chain     	= array();
 	private $coin_www       	= array();
-	private $languages			= array();
+	private $languages		= array();
 
 	private $custom_images 		= array('img_plogin'=>'Payment Login', 'img_flogin'=>'File Download Login', 'img_sold'=>'Product Sold', 'img_pdisable'=>'Payments Disabled', 'img_fdisable'=>'File Payments Disabled', 'img_nofile'=>'File Not Exists'); // custom payment box images
 	private $expiry_period 		= array('NO EXPIRY', '10 MINUTES', '20 MINUTES', '30 MINUTES', '1 HOUR', '2 HOURS', '3 HOURS', '6 HOURS', '12 HOURS', '1 DAY', '2 DAYS', '3 DAYS', '4 DAYS', '5 DAYS',  '1 WEEK', '2 WEEKS', '3 WEEKS', '4 WEEKS', '1 MONTH', '2 MONTHS', '3 MONTHS', '6 MONTHS', '12 MONTHS'); // payment expiry period
@@ -42,9 +44,9 @@ final class gourlclass
 	private $expiry_view		= array("2 DAYS", "1 DAY", "12 HOURS", "6 HOURS", "3 HOURS", "2 HOURS", "1 HOUR");
 	private $lock_level_view 	= array("Unregistered Visitors", "Unregistered Visitors + Registered Subscribers", "Unregistered Visitors + Registered Subscribers/Contributors", "Unregistered Visitors + Registered Subscribers/Contributors/Authors");
 	
-	private $fields_membership 			= array("ppmPrice" => "0.00", "ppmPriceCoin" => "0.0000", "ppmPriceLabel" => "BTC", "ppmExpiry" => "1 MONTH", "ppmLevel"  => 0, "ppmProfile" => 0, "ppmLang" => "en", "ppmCoin"  => "", "ppmOneCoin"  => "", "ppmTextAbove"  => "", "ppmTextBelow"  => "", "ppmTextAbove2"  => "", "ppmTextBelow2"  => "", "ppmTitle" => "", "ppmTitle2" => "", "ppmCommentAuthor"  => "", "ppmCommentBody"  => "", "ppmCommentReply"  => "");
+	private $fields_membership 		= array("ppmPrice" => "0.00", "ppmPriceCoin" => "0.0000", "ppmPriceLabel" => "BTC", "ppmExpiry" => "1 MONTH", "ppmLevel"  => 0, "ppmProfile" => 0, "ppmLang" => "en", "ppmCoin"  => "", "ppmOneCoin"  => "", "ppmTextAbove"  => "", "ppmTextBelow"  => "", "ppmTextAbove2"  => "", "ppmTextBelow2"  => "", "ppmTitle" => "", "ppmTitle2" => "", "ppmCommentAuthor"  => "", "ppmCommentBody"  => "", "ppmCommentReply"  => "");
 	private $fields_membership_newuser 	= array("userID" => 0, "paymentID" => 0, "startDate"  => "", "endDate" => "", "disabled" => 0, "recordCreated"  => "");
-	private $lock_level_membership 		= array("Registered Subscribers", "Registered Subscribers/Contributors", "Registered Subscribers/Contributors/Authors");
+	private $lock_level_membership 	= array("Registered Subscribers", "Registered Subscribers/Contributors", "Registered Subscribers/Contributors/Authors");
 
 	
 
@@ -78,20 +80,25 @@ final class gourlclass
 		// security data hash; you can change path / file location
 		$this->hash_url = GOURL_PHP."/gourl.hash";
 	    
+		// admin form
+		$this->adminform      	= "gourl_adminform_" . md5(sha1(AUTH_KEY.NONCE_KEY.AUTH_KEY)); 
+		$this->admin_form_key	= 'gourl_adminformkey_' . sha1(md5(AUTH_KEY.NONCE_KEY));
 
 		$this->coin_names 	= self::coin_names();
 		$this->coin_chain 	= self::coin_chain();
-		$this->coin_www 	= self::coin_www();
-		$this->languages 	= self::languages();
+		$this->coin_www 		= self::coin_www();
+		$this->languages 		= self::languages();
 		
 		// compatible test
-		$ver = get_option(GOURL.'version');
-		if (!$ver || version_compare($ver, GOURL_VERSION) < 0) $this->upgrade();
+		$ver 		= get_option(GOURL.'version');         //  current plugin version; '-empty-' if you unistalled plugin
+		$prevver 	= get_option(GOURL.'prev_version');	   //  current plugin version; ; keep version value when plugin uninstalled; $ver ==  $prevver if plugin activated
+		if (!$ver || version_compare($ver, GOURL_VERSION) < 0 || version_compare($prevver, $ver) < 0) $this->upgrade();
 		elseif (is_admin()) gourl_retest_dir();
 		
+
 		
 		// Current Page, Record ID
-		$this->page = (isset($_GET['page'])) ? $_GET['page'] : "";
+		$this->page = (isset($_GET['page'])) ? substr(preg_replace("/[^A-Za-z0-9\_\-]+/", "", $_GET['page']), 0, 50) : "";
 		$this->id 	= (isset($_GET['id']) && intval($_GET['id'])) ? intval($_GET['id']) : 0;
 
 		$this->updated = (isset($_GET['updated']) && $_GET["updated"] == "true") ? true : false;
@@ -601,10 +608,10 @@ final class gourlclass
 		$tmp .= "</table>";
 		
 		$charts = array('BTC' => 7777, 'LTC' => 3, 'DOGE' => 132, 'DASH' => 155, 'RDD' => 169, 'POT' => 173, 'FTC' => 5, 'VTC' => 151, 'VRC' => 209, 'PPC' => 28);
-		$chart = (isset($_GET["chart"]) && isset($charts[$_GET["chart"]])) ? $_GET["chart"] : "BTC";
+		$chart = (isset($_GET["chart"]) && isset($charts[$_GET["chart"]])) ? substr($_GET["chart"], 0, 10) : "BTC";
 
 		$days = array(5=>"5 days", 10=>"10 days", 15=>"15 days", 31=>"1 month", 60=>"2 months", 90=>"3 months",120=>"4 months",180=>"6 months",240=>"9 months",360=>"1 year");
-		$day = (isset($_GET["days"]) && isset($days[$_GET["days"]])) ? $_GET["days"] : 120;
+		$day = (isset($_GET["days"]) && isset($days[$_GET["days"]])) ? intval($_GET["days"]) : 120;
 		
 		$tmp .= "<div style='margin:90px 0 30px 0;height:auto;'>";
 		$tmp .= "<iframe width='1200' height='500' frameborder='0' scrolling='no' marginheight='0' marginwidth='0' src='https://myip.ms/crypto.php?m=".$charts[$chart]."&amp;d=".$day."&amp;a=2&amp;c18=dddddd&amp;c19=dddddd&amp;h=500&amp;w=1200&amp;t=usd".($this->options['chart_reverse']?"":"&amp;r=1")."'></iframe>";
@@ -892,12 +899,14 @@ final class gourlclass
 		$txt = (is_readable($this->hash_url)) ? file_get_contents($this->hash_url) : "";
 		$arr = json_decode($txt, true);
 
+		/*
 		if (isset($arr["nonce"]) && $arr["nonce"] != sha1(md5(NONCE_KEY)))
 		{
 		    $this->save_cryptokeys_hash(); // admin changed NONCE_KEY
 		    $txt = (is_readable($this->hash_url)) ? file_get_contents($this->hash_url) : "";
 		    $arr = json_decode($txt, true);
 		}
+		*/
 
 		foreach($this->coin_names as $k => $v)
 		{
@@ -925,7 +934,8 @@ final class gourlclass
 	 *  20.
 	*/
 	private function post_settings()
-	{
+	{      
+ 
 		foreach ($this->options as $key => $value)
 		{
 			$this->options[$key] = (isset($_POST[GOURL.$key])) ? stripslashes($_POST[GOURL.$key]) : "";
@@ -1046,25 +1056,37 @@ final class gourlclass
 	*/
 	private function save_settings()
 	{
-		$arr = array();
-		foreach ($this->options as $key => $value)
-		{
-		    $boxkey = (strpos($key, "public_key") || strpos($key, "private_key")) ? true : false;
-		    if (!(file_exists($this->hash_url) && !is_writable($this->hash_url) && $boxkey))
-		    {
-		        $oldval = get_option(GOURL.$key);
-		    	if ($boxkey && $oldval != $value) $arr[$key] = array("old_key" => ($oldval ? substr($oldval, 0, -20)."....." : "-empty-"), "new_key" => ($value ? substr($value, 0, -20)."....." : "-empty-"));
-		    	update_option(GOURL.$key, $value);
-		    }
-		}
-		
-		if ($arr) 
-		{    
-		    wp_mail(get_bloginfo('admin_email'), 'Notification - GoUrl Bitcoin Payment Gateway Plugin - Cryptobox Keys Changed', 
-		    date("r")."\n\nGoUrl Bitcoin Payment Gateway for Wordpress plugin\n\nFollowing crypto payment box/es keys was changed on your website -\n\n".print_r($arr, true));
-		}    
+		$arr = array(); 
+		$editable = (!file_exists($this->hash_url) || is_writable($this->hash_url)) ? true : false;
 
-		$this->save_cryptokeys_hash();
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+  			$this->errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);	
+			return false; 
+		}
+		else
+		{
+			foreach ($this->options as $key => $value)
+			{
+			    $boxkey = (strpos($key, "public_key") || strpos($key, "private_key")) ? true : false;
+			    if ($editable || !$boxkey)
+			    {
+			    	$oldval = get_option(GOURL.$key);
+			    	if ($boxkey && $oldval != $value) $arr[$key] = array("old_key" => ($oldval ? substr($oldval, 0, -20)."....." : "-empty-"), "new_key" => ($value ? substr($value, 0, -20)."....." : "-empty-"));
+			    	update_option(GOURL.$key, $value);
+			    }
+			}
+			
+			if ($arr) 
+			{
+				wp_mail(get_bloginfo('admin_email'), 'Notification - GoUrl Bitcoin Payment Gateway Plugin - Cryptobox Keys Changed', 
+				date("r")." GMT \n\nGoUrl Bitcoin Payment Gateway for Wordpress plugin \n\nCrypto payment box/es keys was changed on your website (gourl plugin Settings Page).\n\nIF YOU DIDN'T CHANGE YOUR GOURL KEYS, PLEASE CHANGE YOUR WORDPRESS ADMIN PASSWORD AND RESTORE ORIGINAL KEYS !\nALSO UPDATE GOURL PLUGIN TO THE LATEST VERSION IF YOU ARE USING AN OLD VERSION ! \n\n".print_r($arr, true));
+
+				$this->save_cryptokeys_hash();
+			}    
+
+		     
+		}
 
 		return true;
 	}
@@ -1098,6 +1120,24 @@ final class gourlclass
 	}
 
 
+	/*
+	 *  Notice for non-admin users
+	*/
+	private function is_nonadmin_user ()
+	{    
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator')))
+		{
+			$tmp  = "<div class='wrap ".GOURL."admin'>";	
+			$tmp .= $this->page_title(__('Admin Area', GOURL));
+			$tmp .= "<br><br><br><br><h2><center>".__('Only Admin users can access to this page !', GOURL)."</center></h2><br><br><br>";
+			$tmp .= "</div>";
+
+			echo $tmp;
+			
+			return true;
+		}
+		else return false;
+	}
 
 
 
@@ -1105,8 +1145,24 @@ final class gourlclass
 	 *  24.
 	*/
 	public function page_settings()
-	{
+	{       
+		
+		if ($this->is_nonadmin_user()) return true;  
+
 		$readonly = (file_exists($this->hash_url) && !is_writable($this->hash_url)) ? 'readonly' : '';
+
+		if ($readonly)
+		{	
+			$txt = (is_readable($this->hash_url)) ? file_get_contents($this->hash_url) : "";
+			$arr = json_decode($txt, true);
+			if (isset($arr["nonce"]) && $arr["nonce"] != sha1(md5(NONCE_KEY)))
+			{
+			    $this->errors[] = sprintf(__('The value of wordpress constant NONCE_KEY has been changed. <br>Please unlock "%s" and re-enter your gourl keys; and after that, you can lock gourl.hash file again', GOURL), $this->hash_url);
+			}
+			unset($arr); unset($txt);
+		}
+
+
 
 		if ($this->errors) $message = "<div class='error'>".__('Please fix errors below:', GOURL)."<ul><li>- ".implode("</li><li>- ", $this->errors)."</li></ul></div>";
 		elseif ($this->updated)  $message = '<div class="updated"><p>'.__('Settings have been updated <strong>successfully</strong>', GOURL).'</p></div>';
@@ -1114,7 +1170,7 @@ final class gourlclass
 
         if (!$this->errors && ((isset($_GET['testconnect']) && $_GET["testconnect"] == "true") || $this->updated))
         {
-            if (!(is_admin() && current_user_can('administrator'))) $message .= "<div class='error'><p>".__('Cannot test connection to GoUrl.io Payment Server. You should be ADMIN user!', GOURL)."</p></div>";
+            if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) $message .= "<div class='error'><p>".__('Cannot test connection to GoUrl.io Payment Server. You should be ADMIN user!', GOURL)."</p></div>";
             else 
             {
                 $messages = $this->test_gourl_connection( $this->updated );
@@ -1151,11 +1207,12 @@ final class gourlclass
 		$tmp .= "<h3 class='hndle'>".__('General Settings', GOURL)."</h3>";
 		$tmp .= "<div class='inside'>";
 
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_settings" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_settings" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<p>'.sprintf(__( "If you use multiple websites online, please create separate <a target='_blank' href='%s'>GoUrl Payment Box</a> records (with unique payment box public/private keys) for each of your websites. Do not use the same GoUrl Payment Box with the same public/private keys on your different websites.", GOURL ), "https://gourl.io/editrecord/coin_boxes/0") . '</p>';
 		$tmp .= '<p>'.sprintf(__( "If you want to use plugin in a language other than English, see the page <a href='%s'>Languages and Translations</a>. &#160;  This enables you to easily customize the texts of all the labels visible to your users.", GOURL ), "https://gourl.io/languages.html", "https://gourl.io/languages.html") . '</p>';
-		if (!$readonly) $tmp .= '<p class="blue">'.sprintf(__( "<b style='color:red'>ADDITIONAL PAYMENTS SECURITY</b>  - You can make file <a href='%s'>%s</a> - <a target='_blank' href='%s'>readonly</a>. GoUrl Public/Private keys on page below will be not editable anymore (readonly mode). Optional - for full security make <a target='_blank' href='%s'>readonly</a> gourl main plugin file <a href='%s'>gourl.php</a> also.", GOURL ), $this->hash_url, "<b>".basename($this->hash_url)."</b>", "https://www.cyberciti.biz/faq/linux-write-protecting-a-file/", "https://www.cyberciti.biz/faq/linux-write-protecting-a-file/", plugin_dir_url( __FILE__ )."gourl.php") . '</p>';
+		if (!$readonly) $tmp .= '<p class="blue">'.sprintf(__( "<b style='color:red'>ADDITIONAL PAYMENTS SECURITY</b>  - You can make file <a href='%s'>%s</a> - <a target='_blank' href='%s'>readonly</a> (<b>file location</b> - %s; <a target='_blank' href='%s'>instruction</a>) <br>GoUrl Public/Private keys on page below will be not editable anymore (readonly mode). <br>Optional - for full security make <a target='_blank' href='%s'>readonly</a> gourl main plugin file <a href='%s'>gourl.php</a> also.", GOURL ), $this->hash_url, "<b>".basename($this->hash_url)."</b>", "https://www.cyberciti.biz/faq/linux-write-protecting-a-file/", (strpos($this->hash_url, "wp-content") ? "wp-content".$this->right($this->hash_url, "wp-content") : $this->hash_url), "https://www.cyberciti.biz/faq/linux-write-protecting-a-file/", "https://www.cyberciti.biz/faq/linux-write-protecting-a-file/", plugin_dir_url( __FILE__ )."gourl.php") . '</p>';
 		$tmp .= '<br><br>';
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<img id="gourlsubmitloading" src="'.plugins_url('/images/loading.gif', __FILE__).'" border="0">';
@@ -1446,15 +1503,15 @@ final class gourlclass
 	{
 		global $wpdb;
 	
-		if 		($page == "file") 	 { $idx = "fileID"; $table = "crypto_files"; }
-		elseif 	($page == "product") { $idx = "productID"; $table = "crypto_products"; }
+		if 		($page == "file") 	{ $idx = "fileID"; 	$table = "crypto_files"; }
+		elseif 	($page == "product") 	{ $idx = "productID"; 	$table = "crypto_products"; }
 		else 	return false;
 		
 		$this->record = array();
 
 		if ($this->id)
 		{
-			$tmp = $wpdb->get_row("SELECT * FROM ".$table." WHERE ".$idx." = ".$this->id." LIMIT 1", ARRAY_A);
+			$tmp = $wpdb->get_row("SELECT * FROM ".$table." WHERE ".$idx." = ".intval($this->id)." LIMIT 1", ARRAY_A);
 			if (!$tmp) { header('Location: '.GOURL_ADMIN.GOURL.$page); die(); }
 		}
 
@@ -1556,7 +1613,10 @@ final class gourlclass
 
 		if (!$this->record["defCoin"]) $this->record_errors[] = __("Field 'PaymentBox Coin' - cannot be empty", GOURL);
 		elseif (!isset($this->coin_names[$this->record["defCoin"]])) $this->record_errors[] = __("Field 'PaymentBox Coin' - invalid value", GOURL);
-		elseif (!isset($this->payments[$this->record["defCoin"]])) $this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please re-save record", GOURL), $this->coin_names[$this->record["defCoin"]]);
+		elseif (!isset($this->payments[$this->record["defCoin"]])) {
+ 			if (!$this->payments) $this->record_errors[] = sprintf(__("You must choose at least one payment method. Please enter your GoUrl Public/Private Keys on <a href='%s'>settings page</a>. Instruction <a href='%s'>here &#187;</a>", GOURL),  GOURL_ADMIN.GOURL.'settings#gourlcurrencyconverterapi_key', GOURL_ADMIN.GOURL."#i3");	
+			$this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please re-save record", GOURL), $this->coin_names[$this->record["defCoin"]]);
+		}
 		elseif ($this->record["priceCoin"] != 0 && $this->record["defCoin"] != $this->record["priceLabel"])
 		{
 			if (isset($this->payments[$this->record["priceLabel"]])) $this->record["defCoin"] = $this->record["priceLabel"];
@@ -1581,7 +1641,13 @@ final class gourlclass
 	{
 		global $wpdb;
 	
-		$dt = gmdate('Y-m-d H:i:s');
+		$dt = gmdate('Y-m-d H:i:s');  
+
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+			$this->record_errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);
+			return false; 
+		}
 	
 		$fileSize = ($this->record['fileName']) ? filesize(GOURL_DIR."files/".$this->record['fileName']) : 0;
 
@@ -1656,6 +1722,7 @@ final class gourlclass
 	*/
 	public function page_newfile()
 	{
+		if ($this->is_nonadmin_user()) return true;  
 	
 		$preview = ($this->id && isset($_GET["preview"]) && $_GET["preview"] == "true") ? true : false;
 	
@@ -1699,7 +1766,8 @@ final class gourlclass
 		$tmp .= "<h3 class='hndle'>".__(($this->id?'Edit file':'Upload New File, Music, Picture, Video'), GOURL)."</h3>";
 		$tmp .= "<div class='inside'>";
 	
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_download" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_download" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<img id="gourlsubmitloading" src="'.plugins_url('/images/loading.gif', __FILE__).'" border="0">';
@@ -1923,6 +1991,7 @@ final class gourlclass
 	{
 		global $wpdb;
 	
+ 		if ($this->is_nonadmin_user()) return true;  
 
 		if (isset($_GET["intro"]))
 		{
@@ -1935,7 +2004,7 @@ final class gourlclass
 		$search = "";
 		if (isset($_GET["s"]) && trim($_GET["s"]))
 		{
-			$s = trim($_GET["s"]);
+			$s = esc_sql(trim(mb_substr($_GET["s"], 0, 50)));
 				
 			if ($s == "sold") 			$search = " && paymentCnt > 0";
 			elseif ($s == "active") 	$search = " && active != 0";
@@ -1946,9 +2015,9 @@ final class gourlclass
 				
 			if (!$search)
 			{
-				if (in_array(ucwords(strtolower($s)), $this->languages)) $s = array_search(ucwords(strtolower($s)), $this->languages);
+				if (in_array(ucwords(strtolower($s)), $this->languages)) $s = esc_sql(array_search(ucwords(strtolower($s)), $this->languages));
 				if (substr(strtoupper($s), -4) == " USD") $s = substr($s, 0, -4);
-				$s = esc_sql($s);
+
 				$search = " && (fileTitle LIKE '%".$s."%' || fileName LIKE '%".$s."%' || fileUrl LIKE '%".$s."%' || fileText LIKE '%".$s."%' || priceUSD LIKE '%".$s."%' || priceCoin LIKE '%".$s."%' || priceLabel LIKE '%".$s."%' || userFormat LIKE '%".$s."%' || expiryPeriod LIKE '%".$s."%' || defCoin LIKE '%".$s."%' || image LIKE '%".$s."%' || imageWidth LIKE '%".$s."%' || paymentCnt LIKE '%".$s."%' || lang LIKE '%".$s."%' || DATE_FORMAT(createtime, '%d %M %Y') LIKE '%".$s."%')";
 			}
 		}
@@ -2022,7 +2091,7 @@ final class gourlclass
 		global $wpdb, $current_user;
 
 		// not available activated coins
-		if (!$this->payments) return "";
+		if (!$this->payments) { $html = $this->display_error_nokeys(); return $html; } 
 
 		if (!isset($arr["id"]) || !intval($arr["id"])) return '<div>'.sprintf(__('Invalid format. Use %s', GOURL), '&#160; ['.GOURL_TAG_DOWNLOAD.' id=..id..]').'</div>';
 
@@ -2038,7 +2107,7 @@ final class gourlclass
 	
 		// Current File Info
 		// --------------------------
-		$arr = $wpdb->get_row("SELECT * FROM crypto_files WHERE fileID = ".$id." LIMIT 1", ARRAY_A);
+		$arr = $wpdb->get_row("SELECT * FROM crypto_files WHERE fileID = ".intval($id)." LIMIT 1", ARRAY_A);
 		if (!$arr) return '<div>'.sprintf(__("Invalid file id '%s' -", GOURL), $id)." ".$short_code.'</div>';
 	
 	
@@ -2075,9 +2144,11 @@ final class gourlclass
 		$createtime		= $arr["createtime"];
 		$userID 		= ($userFormat == "MANUAL" ? "user_".$current_user->ID : "");
 		$orderID 		= "file_".$id; // file_+fileID as orderID
-		$filePath 		= GOURL_DIR."files/".$fileName;
+		$filePath 		= GOURL_DIR."files/".mb_substr(preg_replace('/[\(\)\?\!\;\,\>\<\'\"\/\%]/', '', str_replace("..", "", $fileName)), 0, 100);
 		$anchor 		= "gbx".$this->icrc32($id);
 	
+
+
 		if (strip_tags(mb_strlen($fileText)) < 5) $fileText = '';
 	
 	
@@ -2122,7 +2193,7 @@ final class gourlclass
 
 			if(!defined("CRYPTOBOX_PRIVATE_KEYS")) define("CRYPTOBOX_PRIVATE_KEYS", implode("^", $cryptobox_private_keys));
 
-			if (!$available_coins) return '<div>'.__('No Available Payments -', GOURL).' '.$short_code.'</div>';
+			if (!$available_coins) { $html = '<div>'.$this->display_error_nokeys().' '.$short_code.'</div>'; return $html; }
 
 			if (!in_array($defCoin, $available_coins)) { $vals = array_values($available_coins); $defCoin = array_shift($vals); }
 
@@ -2169,7 +2240,7 @@ final class gourlclass
 
 			// Paid or not
 			$is_paid = $box->is_paid();
-
+			                  
 
 
 
@@ -2241,32 +2312,32 @@ final class gourlclass
 			// ---------------------
 			if ($is_paid && isset($_GET[$download_key]) && $_GET[$download_key] == $this->icrc32($orderID))
 			{
-				// Starting Download
-                if ($fileUrl)
-                {
-                    $box->set_status_processed();
+			    // Starting Download
+	                if ($fileUrl)
+	                {
+	                    $box->set_status_processed();
 
-                    // Erase Old Cache
-                    ob_clean();
+	                    // Erase Old Cache
+	                    ob_clean();
 
-                    // Open file url
-                    header('Location: ' . $fileUrl);
-                    echo "<script>window.location.href = '".$fileUrl."';</script>";
+	                    // Open file url
+	                    header('Location: ' . $fileUrl);
+	                    echo "<script>window.location.href = '".$fileUrl."';</script>";
 
-                    die;
-                }
-                else
-                {
-                    $this->download_file($filePath);
+	                    die;
+	                }
+	                elseif (trim(dirname($filePath),"/") == trim(GOURL_DIR."files","/"))
+	                {
+	                    $this->download_file($filePath);
 
-                    // Set Status - User Downloaded File
-                    $box->set_status_processed();
+	                    // Set Status - User Downloaded File
+	                    $box->set_status_processed();
 
-                    // Flush Cache
-                    if (ob_get_level()) ob_flush();
+	                    // Flush Cache
+	                    if (ob_get_level()) ob_flush();
 
-                    die;
-                }
+	                    die;
+	                }
 			}
 		}
 	
@@ -2390,7 +2461,10 @@ final class gourlclass
 	
 		if (!$this->options2["ppvCoin"]) $this->record_errors[] = __("Field 'PaymentBox Coin' - cannot be empty", GOURL);
 		elseif (!isset($this->coin_names[$this->options2["ppvCoin"]])) $this->record_errors[] = __("Field 'PaymentBox Coin' - invalid value", GOURL);
-		elseif (!isset($this->payments[$this->options2["ppvCoin"]])) $this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please click on 'Save Settings' button", GOURL), $this->coin_names[$this->options2["ppvCoin"]]);
+		elseif (!isset($this->payments[$this->options2["ppvCoin"]])) {    
+			if (!$this->payments) $this->record_errors[] = sprintf(__("You must choose at least one payment method. Please enter your GoUrl Public/Private Keys on <a href='%s'>settings page</a>. Instruction <a href='%s'>here &#187;</a>", GOURL),  GOURL_ADMIN.GOURL.'settings#gourlcurrencyconverterapi_key', GOURL_ADMIN.GOURL."#i3");
+			$this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please click on 'Save Settings' button", GOURL), $this->coin_names[$this->options2["ppvCoin"]]);
+		}
 		elseif ($this->options2["ppvPriceCoin"] != 0 && $this->options2["ppvCoin"] != $this->options2["ppvPriceLabel"]) $this->record_errors[] = sprintf(__("Field 'PaymentBox Coin' - please select '%s' because you have entered price in %s", GOURL), $this->coin_names[$this->options2["ppvPriceLabel"]], $this->coin_names[$this->options2["ppvPriceLabel"]]);
 		
 		if ($this->options2["ppvPriceCoin"] != 0 && !$this->options2["ppvOneCoin"]) $this->record_errors[] = sprintf(__("Field 'Use Default Coin Only' - check it because you have entered price in %s. Please use price in USD if you want to accept multiple coins", GOURL), $this->coin_names[$this->options2["ppvPriceLabel"]]);
@@ -2406,7 +2480,14 @@ final class gourlclass
 	{
 		if ($this->options2['ppvPrice'] <= 0)  $this->options2['ppvPrice'] = 0;
 		if ($this->options2['ppvPriceCoin'] <= 0 || $this->options2['ppvPrice'] > 0) { $this->options2['ppvPriceCoin'] = 0; $this->options2['ppvPriceLabel'] = ""; }
-		
+
+
+     		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+			$this->record_errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);
+			return false; 
+		}
+		else
 		foreach ($this->options2 as $key => $value)
 		{
 			update_option(GOURL.$key, $value);
@@ -2422,6 +2503,8 @@ final class gourlclass
 	*/
 	public function page_view()
 	{
+		if ($this->is_nonadmin_user()) return true;  		
+
 		$example = 0;
 		$preview = (isset($_GET["preview"]) && $_GET["preview"] == "true") ? true : false;
 
@@ -2446,7 +2529,7 @@ final class gourlclass
 	
 		if ($preview)
 		{
-			$example = $_GET["example"];
+			$example = intval($_GET["example"]);
 			if ($example == 1 || $example == 2) $short_code = '['.GOURL_TAG_VIEW.' img="image'.$example.'.jpg"]';
 			else $short_code = '['.GOURL_TAG_VIEW.' frame="https://www.youtube.com/embed/Eg58KaXjCFI" w="800" h="480"]';
 				
@@ -2520,7 +2603,8 @@ final class gourlclass
 		$tmp .= "<h3 class='hndle'>".__('Paid Access to Premium Webages for Unregistered Visitors', GOURL)."</h3>";
 		$tmp .= "<div class='inside'>";
 	
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_view" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_view" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<input type="submit" class="'.GOURL.'button button-primary" name="submit" value="'.__('Save Settings', GOURL).'">';
@@ -2729,7 +2813,7 @@ final class gourlclass
 				
 			if(!defined("CRYPTOBOX_PRIVATE_KEYS")) define("CRYPTOBOX_PRIVATE_KEYS", implode("^", $cryptobox_private_keys));
 				
-			if (!$available_coins) { echo '<div>'.__('No Available Payments -', GOURL).' '.$short_code.'</div>'; return false; }
+			if (!$available_coins) { echo '<div>'.$this->display_error_nokeys().' '.$short_code.'</div>'; return false; }
 				
 			if (!in_array($defCoin, $available_coins)) { $vals = array_values($available_coins); $defCoin = array_shift($vals); }
 				
@@ -2814,12 +2898,46 @@ final class gourlclass
 		// another tag [gourl-membership] with hgh priority exists on page 
 		if ($this->lock_type == GOURL_TAG_MEMBERSHIP) return ""; 
 	
-		// not available activated coins
-		if (!$this->payments) return "";
-		
-		
 		// preview admin mode
-		$preview_mode	= (stripos($_SERVER["REQUEST_URI"], "wp-admin/admin.php?") && $this->page == "gourlpayperview") ? true : false;
+		$preview_mode	= (stripos($_SERVER["REQUEST_URI"], "wp-admin/admin.php?") && $this->page == "gourlpayperview" && current_user_can('administrator')) ? true : false;
+
+
+		// not available activated bitcoin/altcoin
+		if (!$this->payments) 
+		{     
+			if (!$preview_mode)
+			{
+			    	add_filter('the_content', 		'gourl_lock_filter', 11111);
+				add_filter('the_content_rss', 	'gourl_lock_filter', 11111);
+				add_filter('the_content_feed', 	'gourl_lock_filter', 11111);
+				add_filter("wp_title", 		'gourl_hide_headtitle', 11111);
+				add_filter("wp_title_rss", 	'gourl_hide_headtitle', 11111);
+				add_filter('the_title', 	'gourl_hide_all_titles', 11111);
+				add_filter('the_title_rss', 'gourl_hide_all_titles', 11111);
+				add_filter('the_title', 	'gourl_hide_menu_titles', 11111);
+				add_filter('the_title_rss', 'gourl_hide_menu_titles', 11111);
+				add_filter("wp_title", 		'gourl_hide_headtitle', 11111);
+				add_filter("wp_title_rss", 	'gourl_hide_headtitle', 11111);
+				add_filter('the_title', 	'gourl_hide_page_title', 11111);
+				add_filter('the_title_rss', 'gourl_hide_page_title', 11111);
+				add_filter('get_comment_author_link', 	'gourl_return_false', 11111);
+				add_filter('comment_text',	'gourl_lock_comments', 11111);  
+				add_filter('post_comments_link',     'gourl_return_false', 1);
+				add_filter('comment_reply_link',     'gourl_return_false', 1);
+				add_filter('comments_open', 		'gourl_return_false', 1);  
+				add_action('do_feed',      'gourl_disable_feed', 1);
+				add_action('do_feed_rdf',  'gourl_disable_feed', 1);
+				add_action('do_feed_rss',  'gourl_disable_feed', 1);
+				add_action('do_feed_rss2', 'gourl_disable_feed', 1);
+				add_action('do_feed_atom', 'gourl_disable_feed', 1);	
+			}		
+
+			$html = GOURL_LOCK_START.$this->display_error_nokeys().GOURL_LOCK_END; 
+
+			return $html; 
+		}
+					
+		
 		
 		
 		// if user already bought pay-per-view
@@ -2922,7 +3040,7 @@ final class gourlclass
 			
 		if(!defined("CRYPTOBOX_PRIVATE_KEYS")) define("CRYPTOBOX_PRIVATE_KEYS", implode("^", $cryptobox_private_keys));
 			
-		if (!$available_coins) { $html = '<div>'.__('No Available Payments -', GOURL).' '.$short_code.'</div>'; return $html; } 
+		if (!$available_coins) { $html = '<div>'.$this->display_error_nokeys().' '.$short_code.'</div>'; return $html; } 
 			
 		if (!in_array($defCoin, $available_coins)) { $vals = array_values($available_coins); $defCoin = array_shift($vals); }
 
@@ -3121,7 +3239,6 @@ final class gourlclass
 	
 	
 	
-
 	
 	
 	
@@ -3199,7 +3316,10 @@ final class gourlclass
 	
 		if (!$this->options3["ppmCoin"]) $this->record_errors[] = __("Field 'PaymentBox Coin' - cannot be empty", GOURL);
 		elseif (!isset($this->coin_names[$this->options3["ppmCoin"]])) $this->record_errors[] = __("Field 'PaymentBox Coin' - invalid value", GOURL);
-		elseif (!isset($this->payments[$this->options3["ppmCoin"]])) $this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please click on 'Save Settings' button", GOURL), $this->coin_names[$this->options3["ppmCoin"]]);
+		elseif (!isset($this->payments[$this->options3["ppmCoin"]])) {  
+			if (!$this->payments) $this->record_errors[] = sprintf(__("You must choose at least one payment method. Please enter your GoUrl Public/Private Keys on <a href='%s'>settings page</a>. Instruction <a href='%s'>here &#187;</a>", GOURL),  GOURL_ADMIN.GOURL.'settings#gourlcurrencyconverterapi_key', GOURL_ADMIN.GOURL."#i3");
+			$this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please click on 'Save Settings' button", GOURL), $this->coin_names[$this->options3["ppmCoin"]]);
+		}
 		elseif ($this->options3["ppmPriceCoin"] != 0 && $this->options3["ppmCoin"] != $this->options3["ppmPriceLabel"]) $this->record_errors[] = sprintf(__("Field 'PaymentBox Coin' - please select '%s' because you have entered price in %s", GOURL), $this->coin_names[$this->options3["ppmPriceLabel"]], $this->coin_names[$this->options3["ppmPriceLabel"]]);
 		
 		if ($this->options3["ppmPriceCoin"] != 0 && !$this->options3["ppmOneCoin"]) $this->record_errors[] = sprintf(__("Field 'Use Default Coin Only' - check it because you have entered price in %s. Please use price in USD if you want to accept multiple coins", GOURL), $this->coin_names[$this->options3["ppmPriceLabel"]]);
@@ -3217,10 +3337,17 @@ final class gourlclass
 		if ($this->options3['ppmPrice'] <= 0)  $this->options3['ppmPrice'] = 0;
 		if ($this->options3['ppmPriceCoin'] <= 0 || $this->options3['ppmPrice'] > 0) { $this->options3['ppmPriceCoin'] = 0; $this->options3['ppmPriceLabel'] = ""; }
 		
+     		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+			$this->record_errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);
+			return false; 
+		}
+		else
 		foreach ($this->options3 as $key => $value)
 		{
 			update_option(GOURL.$key, $value);
 		}
+
 	
 		return true;
 	}
@@ -3237,6 +3364,8 @@ final class gourlclass
 	{
 		global $current_user;
 		
+		if ($this->is_nonadmin_user()) return true;  
+
 		$example = 0;
 		$preview = (isset($_GET["preview"]) && $_GET["preview"] == "true") ? true : false;
 		
@@ -3276,7 +3405,7 @@ final class gourlclass
 			}
 			else
 			{
-				$example = $_GET["example"];
+				$example = intval($_GET["example"]);
 				if ($example == 1 || $example == 2) $short_code = '['.GOURL_TAG_MEMBERSHIP.' img="image'.$example.($example==2?'.jpg':'.png').'"]';
 				else $short_code = '['.GOURL_TAG_MEMBERSHIP.' frame="https://www.youtube.com/embed/_YEyzvtMx3s" w="700" h="380"]';
 
@@ -3352,7 +3481,8 @@ final class gourlclass
 		$tmp .= "<h3 class='hndle'>".__('Paid Access to Premium Pages for Registered Users', GOURL)."</h3>";
 		$tmp .= "<div class='inside'>";
 	
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_membership" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_membership" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<input type="submit" class="'.GOURL.'button button-primary" name="submit" value="'.__('Save Settings', GOURL).'">';
@@ -3545,7 +3675,7 @@ final class gourlclass
 	
 		// if premium user already
 		$dt = gmdate('Y-m-d H:i:s');
-		if ($free_user && $logged && $wpdb->get_row("SELECT membID FROM crypto_membership WHERE userID = ".$current_user->ID." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0 LIMIT 1", OBJECT)) $free_user = false;
+		if ($free_user && $logged && $wpdb->get_row("SELECT membID FROM crypto_membership WHERE userID = ".intval($current_user->ID)." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0 LIMIT 1", OBJECT)) $free_user = false;
 	
 		
 		$premium = ($free_user) ? false : true;
@@ -3593,13 +3723,40 @@ final class gourlclass
 		// empty by dafault
 		$html = "";
 		
+   		// preview admin mode
+		$preview_mode	= (stripos($_SERVER["REQUEST_URI"], "wp-admin/admin.php?") && $this->page == "gourlpaypermembership" && current_user_can('administrator')) ? true : false;
 
-		// not available activated coins
-		if (!$this->payments) return "";
+
+		// not available activated bitcoin/altcoin
+		if (!$this->payments) 
+		{ 
+			if (!$preview_mode)
+			{	
+				add_filter('the_content', 		'gourl_lock_filter', 11111);
+				add_filter('the_content_rss', 	'gourl_lock_filter', 11111);
+				add_filter('the_content_feed', 	'gourl_lock_filter', 11111);
+				add_filter("wp_title", 		'gourl_hide_headtitle_unlogged', 11111);
+				add_filter("wp_title_rss", 	'gourl_hide_headtitle_unlogged', 11111);
+				add_filter('the_title', 	'gourl_hide_all_titles', 11111);
+				add_filter('the_title_rss', 'gourl_hide_all_titles', 11111);
+				add_filter('get_comment_author_link', 	'gourl_return_false', 11111);
+				add_filter('comment_text',	'gourl_lock_comments', 11111);
+				add_filter('post_comments_link',     'gourl_return_false', 1);
+				add_filter('comment_reply_link',     'gourl_return_false', 1);
+				add_filter('comments_open', 		'gourl_return_false', 1);
+				add_action('do_feed',      'gourl_disable_feed', 1);
+				add_action('do_feed_rdf',  'gourl_disable_feed', 1);
+				add_action('do_feed_rss',  'gourl_disable_feed', 1);
+				add_action('do_feed_rss2', 'gourl_disable_feed', 1);
+				add_action('do_feed_atom', 'gourl_disable_feed', 1);
+			}
+
+			$html = GOURL_LOCK_START.$this->display_error_nokeys().GOURL_LOCK_END; 
+
+			return $html; 
+		} 
 	
 		
-		// preview admin mode
-		$preview_mode	= (stripos($_SERVER["REQUEST_URI"], "wp-admin/admin.php?") && $this->page == "gourlpaypermembership") ? true : false;
 		
 
 		// if premium user already or don't need upgade user membership 
@@ -3699,7 +3856,7 @@ final class gourlclass
 	else	
 	{	
 		// if admin disabled valid user membership, display new payment form with new unique orderID for that user
-		$prev_payments = $wpdb->get_row("SELECT count(membID) as cnt FROM crypto_membership WHERE userID = ".$current_user->ID." && disabled = 1 && startDate <= '$dt' && endDate >= '$dt' && paymentID > 0", OBJECT);
+		$prev_payments = $wpdb->get_row("SELECT count(membID) as cnt FROM crypto_membership WHERE userID = ".intval($current_user->ID)." && disabled = 1 && startDate <= '$dt' && endDate >= '$dt' && paymentID > 0", OBJECT);
 		if ($prev_payments && $prev_payments->cnt > 0)
 		{
 			$orderID 		= "membership".($prev_payments->cnt+1);
@@ -3732,7 +3889,7 @@ final class gourlclass
 			
 		if(!defined("CRYPTOBOX_PRIVATE_KEYS")) define("CRYPTOBOX_PRIVATE_KEYS", implode("^", $cryptobox_private_keys));
 			
-		if (!$available_coins) { $html = '<div>'.__('No Available Payments -', GOURL).' '.$short_code.'</div>'; return $html; } 
+		if (!$available_coins) { $html = '<div>'.$this->display_error_nokeys().' '.$short_code.'</div>'; return $html; } 
 			
 		if (!in_array($defCoin, $available_coins)) { $vals = array_values($available_coins); $defCoin = array_shift($vals); }
 			
@@ -3973,12 +4130,15 @@ final class gourlclass
 	{
 		global $wpdb;
 
+		if ($this->is_nonadmin_user()) return true;  
+
 		$dt = gmdate('Y-m-d H:i:s');
 
 		$search = "";
 		if (isset($_GET["s"]) && trim($_GET["s"]))
 		{
-			$s = trim($_GET["s"]);
+			$s = esc_sql(trim(mb_substr($_GET["s"], 0, 50)));
+
 			if ($s == "active") $search = " && startDate <= '$dt' && endDate >= '$dt' && disabled = 0";
 			elseif ($s == "manual") $search = " && paymentID = 0";
 			elseif ($s == "disabled") $search = " && disabled = 1";
@@ -3988,7 +4148,6 @@ final class gourlclass
 
 			if (!$search)
 			{
-				$s = esc_sql($s);
 				$ids = "";
 				$result = $wpdb->get_results("SELECT ID FROM $wpdb->users WHERE user_login LIKE '%".$s."%' || user_nicename LIKE '%".$s."%' || user_email LIKE '%".$s."%' || display_name LIKE '%".$s."%' LIMIT 200");
 				foreach ( $result as $obj ) $ids .= ", " . intval($obj->ID);
@@ -4060,6 +4219,8 @@ final class gourlclass
 	{
 		global $wpdb;
 	
+		if ($this->is_nonadmin_user()) return true;  
+
 		if ($this->record_errors) $message = "<div class='error'>".__('Please fix errors below:', GOURL)."<ul><li>- ".implode("</li><li>- ", $this->record_errors)."</li></ul></div>";
 		else $message = "";
 	
@@ -4076,14 +4237,15 @@ final class gourlclass
 		$tmp .= "<div class='postbox'>";
 		
 		$tmp .= '<div class="alignright"><br>';
-		$tmp .= '<a href="'.GOURL_ADMIN.GOURL.'paypermembership_user&id='.$this->id.(isset($_GET['userID'])?"&userID=".$_GET['userID']:"").'">'.__('Reload Page', GOURL).'</a>';
+		$tmp .= '<a href="'.GOURL_ADMIN.GOURL.'paypermembership_user&id='.$this->id.(isset($_GET['userID'])?"&userID=".intval($_GET['userID']):"").'">'.__('Reload Page', GOURL).'</a>';
 		$tmp .= '<a href="'.GOURL_ADMIN.GOURL.'paypermembership_users">'.__('All Premium Users', GOURL).'</a>';
 		$tmp .= '</div>';
 		
 		$tmp .= "<h3 class='hndle'>".__('Manually create Premium Membership', GOURL)."</h3>";
 		$tmp .= "<div class='inside'>";
 	
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_membership_newuser" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_membership_newuser" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<img id="gourlsubmitloading" src="'.plugins_url('/images/loading.gif', __FILE__).'" border="0">';
@@ -4186,6 +4348,14 @@ final class gourlclass
 	{
 		global $wpdb;
 
+
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+			$this->record_errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);
+			return false; 
+		}
+	   
+
 		$sql = "INSERT INTO crypto_membership (userID, paymentID, startDate, endDate, disabled, recordCreated)
 				VALUES (
 						'".esc_sql($this->record['userID'])."',
@@ -4239,7 +4409,10 @@ final class gourlclass
 		
 		if (!$this->record["defCoin"]) $this->record_errors[] = __("Field 'PaymentBox Coin' - cannot be empty", GOURL);
 		elseif (!isset($this->coin_names[$this->record["defCoin"]])) $this->record_errors[] = __("Field 'PaymentBox Coin' - invalid value", GOURL);
-		elseif (!isset($this->payments[$this->record["defCoin"]])) $this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please re-save record", GOURL), $this->coin_names[$this->record["defCoin"]]);
+		elseif (!isset($this->payments[$this->record["defCoin"]])) {
+			if (!$this->payments) $this->record_errors[] = sprintf(__("You must choose at least one payment method. Please enter your GoUrl Public/Private Keys on <a href='%s'>settings page</a>. Instruction <a href='%s'>here &#187;</a>", GOURL),  GOURL_ADMIN.GOURL.'settings#gourlcurrencyconverterapi_key', GOURL_ADMIN.GOURL."#i3");
+			$this->record_errors[] = sprintf( __("Field 'PaymentBox Coin' - payments in %s not available. Please re-save record", GOURL), $this->coin_names[$this->record["defCoin"]]);
+		}
 		elseif ($this->record["priceCoin"] != 0 && $this->record["defCoin"] != $this->record["priceLabel"]) $this->record_errors[] = sprintf(__("Field 'PaymentBox Coin' - please select '%s' because you have entered price in %s", GOURL), $this->coin_names[$this->record["priceLabel"]], $this->coin_names[$this->record["priceLabel"]]);
 
 		if ($this->record["emailUser"])
@@ -4279,6 +4452,13 @@ final class gourlclass
 		global $wpdb;
 		
 		$dt = gmdate('Y-m-d H:i:s');
+
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator'))) 
+		{
+			$this->record_errors[] = __('You don\'t have permission to edit this page. Please login as ADMIN user!', GOURL);
+			return false; 
+		}
+
 		
 		if ($this->record['priceUSD'] <= 0)  $this->record['priceUSD'] = 0;
 		if ($this->record['priceCoin'] <= 0 || $this->record['priceUSD'] > 0) { $this->record['priceCoin'] = 0; $this->record['priceLabel'] = ""; }
@@ -4362,6 +4542,8 @@ final class gourlclass
 	public function page_newproduct()
 	{
 	
+		if ($this->is_nonadmin_user()) return true;  
+
 		$preview 		= ($this->id && isset($_GET["preview"]) && $_GET["preview"] == "true") ? true : false;
 		$preview_final  = ($this->id && isset($_GET["previewfinal"]) && $_GET["previewfinal"] == "true") ? true : false;
 		$preview_email  = ($this->id && isset($_GET["previewemail"]) && $_GET["previewemail"] == "true") ? true : false;
@@ -4443,7 +4625,8 @@ final class gourlclass
 		$tmp .= "<h3 class='hndle'>".__($this->id?__('Edit Product', GOURL):__('Create New Product', GOURL))."</h3>";
 		$tmp .= "<div class='inside'>";
 	
-		$tmp .= '<input type="hidden" name="ak_action" value="'.GOURL.'save_product" />';
+		$tmp .= '<input type="hidden" name="'.$this->adminform.'" value="'.GOURL.'save_product" />';
+		$tmp .= wp_nonce_field( $this->admin_form_key );
 	
 		$tmp .= '<div class="alignright">';
 		$tmp .= '<img id="gourlsubmitloading" src="'.plugins_url('/images/loading.gif', __FILE__).'" border="0">';
@@ -4641,6 +4824,8 @@ final class gourlclass
 	{
 		global $wpdb;
 	
+		if ($this->is_nonadmin_user()) return true;  
+
 		if (isset($_GET["intro"]))
 		{
 			$intro = intval($_GET["intro"]);
@@ -4652,7 +4837,7 @@ final class gourlclass
 		$search = "";
 		if (isset($_GET["s"]) && trim($_GET["s"]))
 		{
-			$s = trim($_GET["s"]);
+			$s = esc_sql(trim(mb_substr($_GET["s"], 0, 50)));
 				
 			if ($s == "sold") 			$search = " && paymentCnt > 0";
 			elseif ($s == "active") 	$search = " && active != 0";
@@ -4662,9 +4847,9 @@ final class gourlclass
 				
 			if (!$search)
 			{
-				if (in_array(ucwords(strtolower($s)), $this->languages)) $s = array_search(ucwords(strtolower($s)), $this->languages);
+				if (in_array(ucwords(strtolower($s)), $this->languages)) $s = esc_sql(array_search(ucwords(strtolower($s)), $this->languages));
 				if (substr(strtoupper($s), -4) == " USD") $s = substr($s, 0, -4);
-				$s = esc_sql($s);
+
 				$search = " && (productTitle LIKE '%".$s."%' || productText LIKE '%".$s."%' || finalText LIKE '%".$s."%' || priceUSD LIKE '%".$s."%' || priceCoin LIKE '%".$s."%' || priceLabel LIKE '%".$s."%' || expiryPeriod LIKE '%".$s."%' || defCoin LIKE '%".$s."%' || emailUserFrom LIKE '%".$s."%' || emailUserTitle LIKE '%".$s."%' || emailUserBody LIKE '%".$s."%' || emailAdminFrom LIKE '%".$s."%' || emailAdminTitle LIKE '%".$s."%' || emailAdminBody LIKE '%".$s."%' || emailAdminTo LIKE '%".$s."%' || paymentCnt LIKE '%".$s."%' || lang LIKE '%".$s."%' || DATE_FORMAT(createtime, '%d %M %Y') LIKE '%".$s."%')";
 			}
 		}
@@ -4738,7 +4923,7 @@ final class gourlclass
 		global $wpdb, $current_user;
 	
 		// not available activated coins
-		if (!$this->payments) return "";
+		if (!$this->payments) { $html = $this->display_error_nokeys(); return $html; } 
 	
 		if (!isset($arr["id"]) || !intval($arr["id"])) return '<div>'.sprintf(__('Invalid format. Use %s', GOURL), '&#160; ['.GOURL_TAG_PRODUCT.' id="..id.."]').'</div>';
 	
@@ -4753,7 +4938,7 @@ final class gourlclass
 	
 		// Current File Info
 		// --------------------------
-		$arr = $wpdb->get_row("SELECT * FROM crypto_products WHERE productID = ".$id." LIMIT 1", ARRAY_A);
+		$arr = $wpdb->get_row("SELECT * FROM crypto_products WHERE productID = ".intval($id)." LIMIT 1", ARRAY_A);
 		if (!$arr) return '<div>'.sprintf(__("Invalid product id '%s' -", GOURL), $id)." ".$short_code.'</div>';
 	
 	
@@ -4830,7 +5015,7 @@ final class gourlclass
 	
 			if(!defined("CRYPTOBOX_PRIVATE_KEYS")) define("CRYPTOBOX_PRIVATE_KEYS", implode("^", $cryptobox_private_keys));
 	
-			if (!$available_coins) return '<div>'.__('No Available Payments -', GOURL).' '.$short_code.'</div>';
+			if (!$available_coins) { $html = '<div>'.$this->display_error_nokeys().' '.$short_code.'</div>'; return $html; }
 	
 			if (!in_array($defCoin, $available_coins)) { $vals = array_values($available_coins); $defCoin = array_shift($vals); }
 	
@@ -5014,12 +5199,15 @@ final class gourlclass
 	public function page_payments()
 	{
 		global $wpdb;
-		
+	
+		if ($this->is_nonadmin_user()) return true;  
+	
 		$search = $sql_where = "";
 		
 		if (isset($_GET["s"]) && trim($_GET["s"]))
 		{
-			$s = mb_strtolower(trim($_GET["s"]));
+			$s = esc_sql(trim(mb_strtolower(mb_substr($_GET["s"], 0, 50))));
+
 			foreach ($this->addon as $v)
 			{
 				if 	($s == $v) $search = " && orderID like '".esc_sql($v).".%'";
@@ -5044,16 +5232,17 @@ final class gourlclass
 				elseif (isset($this->coin_names[strtoupper($s)])) $search = " && coinLabel = '".strtoupper($s)."'";
 			}	
 				
-			$s = trim($_GET["s"]);
+			$s = esc_sql(trim(mb_substr($_GET["s"], 0, 50)));
+
 			if (!$search)
 			{
 				include_once(plugin_dir_path( __FILE__ )."includes/cryptobox.class.php");
 				
 				$key = get_country_name($s, true); 
-				if ($key) $s = $key;
+				if ($key) $s = esc_sql($key);
 				if (substr(strtoupper($s), -4) == " USD") $s = substr($s, 0, -4);
 				elseif (strtolower($s) == "wp ecommerce") $s = "wpecommerce";
-				$s = esc_sql($s);
+
 				$ids = "";
 				$result = $wpdb->get_results("SELECT ID FROM $wpdb->users WHERE user_login LIKE '%".$s."%' || user_nicename LIKE '%".$s."%' || user_email LIKE '%".$s."%' || display_name LIKE '%".$s."%' LIMIT 200");
 				foreach ( $result as $obj ) $ids .= ", 'user_" . intval($obj->ID) . "', 'user" . intval($obj->ID) . "'";
@@ -5092,7 +5281,7 @@ final class gourlclass
 
 		if (isset($_GET["b"]) && is_numeric($_GET["b"]))
 		{
-			$c = $this->check_payment_confirmation($_GET["b"]);
+			$c = $this->check_payment_confirmation(intval($_GET["b"]));
 
 			echo  "<div class='".($c?"updated":"error")." postbox'>";
 			if ($c) echo  "<span style='color:green'>".sprintf(__('GoUrl.io Live Status : Payment id <b>%s</b> transaction - <b>CONFIRMED</b>', GOURL), '#'.intval($_GET["b"]))."</span>";
@@ -5333,9 +5522,11 @@ final class gourlclass
 	
 		// Actions POST
 	
-		if (isset($_POST['ak_action']) && strpos($this->page, GOURL) === 0)
+		if (isset($_POST[$this->adminform]) && strpos($this->page, GOURL) === 0)
 		{
-			switch($_POST['ak_action'])
+		     check_admin_referer( $this->admin_form_key );		
+
+			switch($_POST[$this->adminform])
 			{
 				case GOURL.'save_settings':
 	
@@ -5345,8 +5536,12 @@ final class gourlclass
 					if (!$this->errors)
 					{
 						$this->save_settings();
-						header('Location: '.GOURL_ADMIN.GOURL.'settings&updated=true');
-						die();
+
+						if (!$this->errors)
+						{
+							header('Location: '.GOURL_ADMIN.GOURL.'settings&updated=true');
+							die();
+						}
 					}
 	
 					break;
@@ -5395,8 +5590,12 @@ final class gourlclass
 					if (!$this->record_errors)
 					{
 						$this->save_view();
-						header('Location: '.GOURL_ADMIN.GOURL.'payperview&updated=true');
-						die();
+
+						if (!$this->record_errors)
+						{
+							header('Location: '.GOURL_ADMIN.GOURL.'payperview&updated=true');
+							die();
+						}
 					}
 				
 					break;
@@ -5409,8 +5608,12 @@ final class gourlclass
 					if (!$this->record_errors)
 					{
 						$this->save_membership();
-						header('Location: '.GOURL_ADMIN.GOURL.'paypermembership&updated=true');
-						die();
+
+						if (!$this->record_errors)
+						{						
+							header('Location: '.GOURL_ADMIN.GOURL.'paypermembership&updated=true');
+							die();
+						}
 					}
 				
 					break;
@@ -5423,8 +5626,12 @@ final class gourlclass
 					if (!$this->record_errors)
 					{
 						$this->save_membership_newuser();
-						header('Location: '.GOURL_ADMIN.GOURL.'paypermembership_users&updated=true');
-						die();
+
+						if (!$this->record_errors)
+						{
+							header('Location: '.GOURL_ADMIN.GOURL.'paypermembership_users&updated=true');
+							die();
+						}
 					}
 					
 					
@@ -5437,14 +5644,15 @@ final class gourlclass
 		
 		
 		// Actions GET
-
-		if (!isset($_POST['ak_action']) && strpos($this->page, GOURL) === 0)
-		{
+			    
+		if (!isset($_POST[$this->adminform]) && strpos($this->page, GOURL) === 0 && is_admin() && is_user_logged_in() && current_user_can('administrator'))
+		{           
+			
 			switch($this->page)
 			{
 				case GOURL.'premiumuser_delete':
 				
-					if ($this->id) $wpdb->query("delete from crypto_membership where membID = ".$this->id." && paymentID = 0 limit 1");
+					if ($this->id) $wpdb->query("delete from crypto_membership where membID = ".intval($this->id)." && paymentID = 0 limit 1");
 				
 					header('Location: '.GOURL_ADMIN.GOURL.'paypermembership_users&updated=true');
 					die();
@@ -5454,7 +5662,7 @@ final class gourlclass
 				
 				case GOURL.'premiumuser_enable':
 						
-					if ($this->id) $wpdb->query("update crypto_membership set disabled = 0 where membID = ".$this->id." limit 1");
+					if ($this->id) $wpdb->query("update crypto_membership set disabled = 0 where membID = ".intval($this->id)." limit 1");
 				
 					header('Location: '.GOURL_ADMIN.GOURL.'paypermembership_users&updated=true');
 					die();
@@ -5464,7 +5672,7 @@ final class gourlclass
 						
 				case GOURL.'premiumuser_disable':
 				
-					if ($this->id) $wpdb->query("update crypto_membership set disabled = 1 where membID = ".$this->id." limit 1");
+					if ($this->id) $wpdb->query("update crypto_membership set disabled = 1 where membID = ".intval($this->id)." limit 1");
 				
 					header('Location: '.GOURL_ADMIN.GOURL.'paypermembership_users&updated=true');
 					die();
@@ -5497,14 +5705,16 @@ final class gourlclass
 		if (is_user_logged_in())
 		{
 			$_administrator = in_array('administrator', $current_user->roles);
-			$_editor 		= in_array('editor', 		$current_user->roles);
+			$_editor 	    = in_array('editor', 	  $current_user->roles);
 		}
 
-		if (isset($_GET[GOURL_PREVIEW]) && $_GET[GOURL_PREVIEW] && !$_POST && ($_administrator || $_editor))
+		if (isset($_GET[GOURL_PREVIEW]) && $_GET[GOURL_PREVIEW] && !$_POST && is_admin() && $_administrator && current_user_can('administrator')) //($_administrator || $_editor))
 		{
-			$filePath = GOURL_DIR."files/".$_GET[GOURL_PREVIEW];
-			
-			if (file_exists($filePath) && is_file($filePath))
+			     
+			$filePath = GOURL_DIR."files/".mb_substr(preg_replace('/[\(\)\?\!\;\,\>\<\'\"\/\%]/', '', str_replace("..", "", $_GET[GOURL_PREVIEW])), 0, 100);
+		
+
+			if (file_exists($filePath) && is_file($filePath) && trim(dirname($filePath),"/") == trim(GOURL_DIR."files","/"))
 			{
 				// Starting Download
 				$this->download_file($filePath);
@@ -5764,9 +5974,10 @@ final class gourlclass
 		if (mb_strpos($ext, " ")!==false)         $ext = str_replace(" ", "_", $ext);
 		if (mb_strpos($fileName, ".")!==false)    $fileName = str_replace(".", "_", $fileName);
 
-		if (!(is_admin() && current_user_can('administrator')))
+		if (!(is_admin() && is_user_logged_in() && current_user_can('administrator')))
 		{
-		    $this->record_errors[] = sprintf(__("Cannot upload file '%s' on server. You should be ADMIN user!", GOURL), $file["name"]);
+		    	$this->record_errors[] = sprintf(__("Cannot upload file '%s' on server. Please login as ADMIN user!", GOURL), $file["name"]);
+			return "";
 		}
 		else
 		{
@@ -5775,8 +5986,8 @@ final class gourlclass
 		    elseif (in_array($dir, array("files")) && !in_array($ext, array("jpg","jpeg","png","gif","mp3","aac","ogg","avi","mov","mp4","mkv","txt","doc","pdf","iso","7z","rar","zip"))) $this->record_errors[] = sprintf(__("Invalid file '%s', supported *.jpg, *.png, *.gif, *.mp3, *.aac, *.ogg, *.avi, *.mov, *.mp4, *.mkv, *.txt, *.doc, *.pdf, *.iso, *.7z, *.rar, *.zip files only", GOURL), $file["name"]);
 		    else
 		    {
-    			if ($english) $fileName = preg_replace('/[^A-Za-z0-9\.\_\&]/', ' ', $fileName); // allowed english symbols only
-    			else $fileName = preg_replace('/[\(\)\?\!\;\,\>\<\'\"\%\&]/', ' ', $fileName);
+    			if ($english) $fileName = preg_replace('/[^A-Za-z0-9\-\_]/', ' ', $fileName); // allowed english symbols only
+    			else $fileName = preg_replace('/[\(\)\?\!\;\,\.\>\<\'\"\/\%\#\&]/', ' ', $fileName);
     
     			$fileName = mb_strtolower(str_replace(" ", "_", preg_replace("{[ \t]+}", " ", trim($fileName))));
     			$fileName = mb_substr($fileName, 0, 90);
@@ -5925,7 +6136,7 @@ final class gourlclass
 		if ($userID && $userID != "guest" && (!is_numeric($userID) || preg_replace('/[^0-9]/', '', $userID) != $userID)) return array("error" => sprintf(__("Error. Invalid User ID - %s. Allowed numeric values or 'guest' value", GOURL), $userID));
 		if (!$userID) return array("error" => __("Error.", GOURL).__("You need first to login or register on the website to make Bitcoin/Altcoin Payments", GOURL));
 	
-		if (!$this->payments) return array("error" => __("Error. Please try a different payment method. GoUrl Bitcoin Plugin not configured - need setup payment box keys on GoUrl Bitcoin Gateway Options page", GOURL));
+		if (!$this->payments) return array("error" => __("Error. Please try a different payment method. GoUrl.io Bitcoin plugin is not configured yet. Need to setup GoUrl Public/Private Keys on plugin settings page. Please contact the website administrator.", GOURL));
 
 		$icon_width = str_replace("px", "", $icon_width);
 		if (!is_numeric($icon_width) || $icon_width < 30 || $icon_width > 250) $icon_width = 60;
@@ -6194,7 +6405,7 @@ final class gourlclass
 	/*
 	 *  76.
 	 */ 
-	private function upgrade ()
+	private function upgrade()
 	{
 		global $wpdb;
 	
@@ -6260,16 +6471,13 @@ final class gourlclass
 			$wpdb->query("alter table crypto_files add key `priceCoin` (priceCoin)");
 			$wpdb->query("alter table crypto_files add key `priceLabel` (priceLabel)");
 		}
-		elseif (true === version_compare(get_option(GOURL.'version'), '1.4.7', '<'))
+		elseif ($wpdb->query("select fileUrl from crypto_files limit 1") === false)
 		{
 			$wpdb->query("alter table crypto_files add `fileUrl` varchar(255) NOT NULL DEFAULT '' after fileName");
 			$wpdb->query("alter table crypto_files add key `fileUrl` (fileUrl)");
 			$wpdb->query("ALTER TABLE `crypto_files` CHANGE `priceCoin` `priceCoin` DOUBLE(17,5) NOT NULL DEFAULT '0.00000'");
 		}
-		elseif (true === version_compare(get_option(GOURL.'version'), '1.2.7', '<'))
-		{
-			$wpdb->query("ALTER TABLE `crypto_files` CHANGE `priceCoin` `priceCoin` DOUBLE(17,5) NOT NULL DEFAULT '0.00000'");
-		}
+
 
 	
 		// TABLE 2 - crypto_payments
@@ -6399,17 +6607,23 @@ final class gourlclass
 	
 			$wpdb->query($sql);
 		}
-		elseif (true === version_compare(get_option(GOURL.'version'), '1.2.7', '<')) 
+
+
+		if (true === version_compare(get_option(GOURL.'prev_version'), '1.6.0', '<'))
+		foreach($this->coin_names as $k => $v)
 		{
-			$wpdb->query("ALTER TABLE `crypto_products` CHANGE `priceCoin` `priceCoin` DOUBLE(17,5) NOT NULL DEFAULT '0.00000'");
-		} 
-		
+			update_option(GOURL.$v."public_key", "");
+			update_option(GOURL.$v."private_key", "");
+		}
+
+
 		// upload dir
 		gourl_retest_dir();
 	
 		if (!file_exists($this->hash_url)) file_put_contents($this->hash_url, '{"nonce":"1"}');
 
-		// current version
+		// current plugin version
+		update_option(GOURL.'prev_version', GOURL_VERSION);
 		update_option(GOURL.'version', GOURL_VERSION);
 				
 		ob_flush();
@@ -6446,10 +6660,20 @@ final class gourlclass
 	    return $exclude . ", cryptobox.min";
 	}
 	
-	
+
 	
 	/*
-	 *  79. Supported Functions
+	 *  79. Need to setup gourl.io keys
+	 */ 
+	public function display_error_nokeys()
+	{
+		return "<div align='center'><a href='".$_SERVER['REQUEST_URI']."'><img border='0' src='".plugins_url('/images/error_keys.png', __FILE__)."'></img></a></div>";
+	}
+	
+
+
+	/*
+	 *  80. Supported Functions
 	 */ 
 	private function sel($val1, $val2)
 	{
@@ -6686,7 +6910,7 @@ function gourl_edit_user_profile($user)
 	if ($user->ID)
 	{
 
-		$obj = $wpdb->get_results("SELECT txDate FROM crypto_payments WHERE userID = 'user".$user->ID."' || userID = 'user_".$user->ID."' ORDER BY txDate DESC LIMIT 1", OBJECT);
+		$obj = $wpdb->get_results("SELECT txDate FROM crypto_payments WHERE userID = 'user".intval($user->ID)."' || userID = 'user_".intval($user->ID)."' ORDER BY txDate DESC LIMIT 1", OBJECT);
 		
 		$tmp .= "<table class='form-table'>";
 		$tmp .= "<tr><th>".__('Bitcoin/altcoin Payments?', GOURL)."</th><td>";
@@ -6699,7 +6923,7 @@ function gourl_edit_user_profile($user)
 		{
 			$min = $max = "";
 			$dt = gmdate('Y-m-d H:i:s');
-			$obj = $wpdb->get_results("SELECT * FROM crypto_membership WHERE userID = ".$user->ID." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0", OBJECT);
+			$obj = $wpdb->get_results("SELECT * FROM crypto_membership WHERE userID = ".intval($user->ID)." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0", OBJECT);
 			
 			if ($obj)
 				foreach($obj as $row)
@@ -6708,9 +6932,12 @@ function gourl_edit_user_profile($user)
 					if (!$max || strtotime($row->endDate) > $max) $max = strtotime($row->endDate);
 				}
 	
+
+			$yes = current_user_can('administrator') ? "<a href='".GOURL_ADMIN.GOURL."paypermembership_users&s=user".$user->ID."'>".__('YES', GOURL)."</a>" : __('YES', GOURL);
+
 			$tmp .= "<table class='form-table'>";
 			$tmp .= "<tr><th>".__('Premium Membership', GOURL)."</th><td>";
-			if ($obj) $tmp .= "<b><a href='".GOURL_ADMIN.GOURL."paypermembership_users&s=user".$user->ID."'>".__('YES', GOURL)."</a></b> &#160; &#160; &#160; ".__('Period', GOURL)." : &#160; " .date("d M Y, H:i A", $min) . "&#160; - &#160;" . date("d M Y, H:i A", $max) . "&#160; ".__('GMT', GOURL);
+			if ($obj) $tmp .= "<b>".$yes."</b> &#160; &#160; &#160; ".__('Period', GOURL)." : &#160; " .date("d M Y, H:i A", $min) . "&#160; - &#160;" . date("d M Y, H:i A", $max) . "&#160; ".__('GMT', GOURL);
 			else $tmp .= "<b>".__('NO', GOURL)."</b>	 &#160; &#160; &#160; <a href='".GOURL_ADMIN.GOURL."paypermembership_user&userID=".$user->ID."'><small>".__('Manually Add Premium Membership', GOURL)."</small></a>";	
 			$tmp .= "</td></tr>";
 			$tmp .= "</table>";
@@ -6737,7 +6964,7 @@ function gourl_show_user_profile($user)
 
 		$min = $max = "";
 		$dt = gmdate('Y-m-d H:i:s');
-		$obj = $wpdb->get_results("SELECT * FROM crypto_membership WHERE userID = ".$user->ID." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0", OBJECT);
+		$obj = $wpdb->get_results("SELECT * FROM crypto_membership WHERE userID = ".intval($user->ID)." && startDate <= '$dt' && endDate >= '$dt' && disabled = 0", OBJECT);
 			
 		if ($obj)
 			foreach($obj as $row)
@@ -6746,9 +6973,12 @@ function gourl_show_user_profile($user)
 				if (!$max || strtotime($row->endDate) > $max) $max = strtotime($row->endDate);
 			}
 
+
+			$yes = current_user_can('administrator') ? "<a href='".GOURL_ADMIN.GOURL."paypermembership_users&s=user".$user->ID."'>".__('YES', GOURL)."</a>" : __('YES', GOURL);
+
 			$tmp .= "<table class='form-table'>";
 			$tmp .= "<tr><th>".__('Premium Membership', GOURL)."</th><td>";
-			if ($obj) $tmp .= "<b>".__('YES', GOURL)."</b> &#160; &#160; &#160; ".__('Period', GOURL)." : &#160; " . date("d M Y", $min) . "&#160; - &#160;" . date("d M Y", $max);
+			if ($obj) $tmp .= "<b>".$yes."</b> &#160; &#160; &#160; ".__('Period', GOURL)." : &#160; " . date("d M Y", $min) . "&#160; - &#160;" . date("d M Y", $max);
 			else $tmp .= "<b>".__('NO', GOURL)."</b>";
 			$tmp .= "</td></tr>";
 			$tmp .= "</table>";
@@ -6759,7 +6989,7 @@ function gourl_show_user_profile($user)
 	return true;
 }
 
-
+		   
 
 
 
@@ -7293,17 +7523,17 @@ class gourl_table_files extends WP_List_Table
 
 		$query = "SELECT * FROM crypto_files WHERE 1 ".$this->search;
 
-		$orderby = !empty($_GET["orderby"]) ? esc_sql($_GET["orderby"]) : 'ASC';
-		$order = !empty($_GET["order"]) ? esc_sql($_GET["order"]) : '';
-		if(!empty($orderby) & !empty($order)){ $query.=' ORDER BY '.$orderby.' '.$order; }
+		$orderby = !empty($_GET["orderby"]) ? esc_sql(substr($_GET["orderby"], 0, 30)) : 'ASC';
+		$order = !empty($_GET["order"]) ? esc_sql(substr($_GET["order"], 0, 30)) : '';
+		if(!empty($orderby) & !empty($order)) { $query.=' ORDER BY '.$orderby.' '.$order; }
 		else $query.=' ORDER BY updatetime DESC';
 		
 		
 		$totalitems = $wpdb->query($query);
 
-		$paged = !empty($_GET["paged"]) ? esc_sql($_GET["paged"]) : '';
+		$paged = !empty($_GET["paged"]) ? esc_sql(substr($_GET["paged"], 0, 30)) : '';
 		
-		if(empty($paged) || !is_numeric($paged) || $paged<=0 ){ $paged=1; }
+		if(empty($paged) || !is_numeric($paged) || $paged<=0 ) { $paged=1; }
 
 		$totalpages = ceil($totalitems/$this->rec_per_page);
 
@@ -7510,17 +7740,17 @@ class gourl_table_products extends WP_List_Table
 
 		$query = "SELECT * FROM crypto_products WHERE 1 ".$this->search;
 
-		$orderby = !empty($_GET["orderby"]) ? esc_sql($_GET["orderby"]) : 'ASC';
-		$order = !empty($_GET["order"]) ? esc_sql($_GET["order"]) : '';
-		if(!empty($orderby) & !empty($order)){ $query.=' ORDER BY '.$orderby.' '.$order; }
+		$orderby = !empty($_GET["orderby"]) ? esc_sql(substr($_GET["orderby"], 0, 30)) : 'ASC';
+		$order = !empty($_GET["order"]) ? esc_sql(substr($_GET["order"], 0, 30)) : '';
+		if(!empty($orderby) & !empty($order)) { $query.=' ORDER BY '.$orderby.' '.$order; }
 		else $query.=' ORDER BY updatetime DESC';
 
 
 		$totalitems = $wpdb->query($query);
 
-		$paged = !empty($_GET["paged"]) ? esc_sql($_GET["paged"]) : '';
+		$paged = !empty($_GET["paged"]) ? esc_sql(substr($_GET["paged"], 0, 30)) : '';
 
-		if(empty($paged) || !is_numeric($paged) || $paged<=0 ){ $paged=1; }
+		if(empty($paged) || !is_numeric($paged) || $paged<=0 ) { $paged=1; }
 
 		$totalpages = ceil($totalitems/$this->rec_per_page);
 
@@ -7804,17 +8034,17 @@ class gourl_table_payments extends WP_List_Table
 	
 		$query = "SELECT * FROM crypto_payments WHERE 1 ".$this->search;
 	
-		$orderby = !empty($_GET["orderby"]) ? esc_sql($_GET["orderby"]) : 'ASC';
-		$order = !empty($_GET["order"]) ? esc_sql($_GET["order"]) : '';
-		if(!empty($orderby) & !empty($order)){ $query.=' ORDER BY '.$orderby.' '.$order; }
+		$orderby = !empty($_GET["orderby"]) ? esc_sql(substr($_GET["orderby"], 0, 30)) : 'ASC';
+		$order = !empty($_GET["order"]) ? esc_sql(substr($_GET["order"], 0, 30)) : '';
+		if(!empty($orderby) & !empty($order)) { $query.=' ORDER BY '.$orderby.' '.$order; }
 		else $query.=' ORDER BY txDate DESC';
 	
 	
 		$totalitems = $wpdb->query($query);
 	
-		$paged = !empty($_GET["paged"]) ? esc_sql($_GET["paged"]) : '';
+		$paged = !empty($_GET["paged"]) ? esc_sql(substr($_GET["paged"], 0, 30)) : '';
 
-		if(empty($paged) || !is_numeric($paged) || $paged<=0 ){ $paged=1; }
+		if(empty($paged) || !is_numeric($paged) || $paged<=0 ) { $paged=1; }
 
 		$totalpages = ceil($totalitems/$this->rec_per_page);
 		
@@ -7981,17 +8211,17 @@ class gourl_table_premiumusers extends WP_List_Table
 
 		$query = "SELECT * FROM crypto_membership WHERE 1 ".$this->search;
 
-		$orderby = !empty($_GET["orderby"]) ? esc_sql($_GET["orderby"]) : 'ASC';
-		$order = !empty($_GET["order"]) ? esc_sql($_GET["order"]) : '';
-		if(!empty($orderby) & !empty($order)){ $query.=' ORDER BY '.$orderby.' '.$order; }
+		$orderby = !empty($_GET["orderby"]) ? esc_sql(substr($_GET["orderby"], 0, 30)) : 'ASC';
+		$order = !empty($_GET["order"]) ? esc_sql(substr($_GET["order"], 0, 30)) : '';
+		if(!empty($orderby) & !empty($order)) { $query.=' ORDER BY '.$orderby.' '.$order; }
 		else $query.=' ORDER BY recordCreated DESC';
 
 
 		$totalitems = $wpdb->query($query);
 
-		$paged = !empty($_GET["paged"]) ? esc_sql($_GET["paged"]) : '';
+		$paged = !empty($_GET["paged"]) ? esc_sql(substr($_GET["paged"], 0, 30)) : '';
 
-		if(empty($paged) || !is_numeric($paged) || $paged<=0 ){ $paged=1; }
+		if(empty($paged) || !is_numeric($paged) || $paged<=0 ) { $paged=1; }
 
 		$totalpages = ceil($totalitems/$this->rec_per_page);
 
@@ -8426,5 +8656,5 @@ function gourl_altcoin_btc_price ($altcoin, $interval = 1)
     }
   
 
-    return 0;       
-}
+    return 0;    
+} 
