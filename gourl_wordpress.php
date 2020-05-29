@@ -1,3 +1,4 @@
+'COVID19',
 <?php
 /*
 Plugin Name: 		GoUrl Bitcoin Payment Gateway & Paid Downloads & Membership
